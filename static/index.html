@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Simple CRUD</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 16px/1.5 system-ui, sans-serif; background: #f4f6f8; color: #1f2937; }
+    main { max-width: 720px; margin: 48px auto; padding: 0 20px; }
+    h1 { margin-bottom: 4px; }
+    p.subtitle { margin-top: 0; color: #6b7280; }
+    form { display: grid; gap: 12px; background: #fff; padding: 20px; border-radius: 10px; box-shadow: 0 1px 3px #0001; }
+    label { display: grid; gap: 4px; font-weight: 600; font-size: 14px; }
+    input, textarea { font: inherit; padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 6px; }
+    textarea { min-height: 70px; resize: vertical; }
+    .actions { display: flex; gap: 8px; }
+    button { font: inherit; cursor: pointer; padding: 8px 14px; border: 0; border-radius: 6px; background: #2563eb; color: #fff; }
+    button.secondary { background: #6b7280; }
+    button.danger { background: #dc2626; }
+    #message { min-height: 24px; color: #dc2626; font-size: 14px; }
+    ul { list-style: none; margin: 24px 0 0; padding: 0; display: grid; gap: 10px; }
+    li { display: flex; align-items: center; gap: 12px; background: #fff; padding: 14px 16px; border-radius: 10px; box-shadow: 0 1px 3px #0001; }
+    li .text { flex: 1; min-width: 0; }
+    li strong { display: block; overflow-wrap: anywhere; }
+    li span { color: #6b7280; overflow-wrap: anywhere; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Simple CRUD</h1>
+    <p class="subtitle">Create, read, update, and delete items.</p>
+
+    <form id="item-form">
+      <label>
+        Name
+        <input id="name" maxlength="100" required>
+      </label>
+      <label>
+        Description
+        <textarea id="description" maxlength="500"></textarea>
+      </label>
+      <div class="actions">
+        <button type="submit" id="submit">Add item</button>
+        <button type="button" class="secondary" id="cancel" hidden>Cancel</button>
+      </div>
+    </form>
+    <div id="message" role="alert"></div>
+    <ul id="items"></ul>
+  </main>
+
+  <script>
+    const form = document.getElementById('item-form');
+    const nameInput = document.getElementById('name');
+    const descriptionInput = document.getElementById('description');
+    const submitButton = document.getElementById('submit');
+    const cancelButton = document.getElementById('cancel');
+    const message = document.getElementById('message');
+    const list = document.getElementById('items');
+    let editingId = null;
+
+    async function api(url, options) {
+      const response = await fetch(url, options);
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.error || 'Request failed');
+      }
+      return response.status === 204 ? null : response.json();
+    }
+
+    function showMessage(text) {
+      message.textContent = text;
+    }
+
+    function resetForm() {
+      editingId = null;
+      form.reset();
+      submitButton.textContent = 'Add item';
+      cancelButton.hidden = true;
+    }
+
+    function render(items) {
+      list.replaceChildren();
+      for (const item of items) {
+        const li = document.createElement('li');
+
+        const text = document.createElement('div');
+        text.className = 'text';
+        const title = document.createElement('strong');
+        title.textContent = item.name;
+        text.append(title);
+        if (item.description) {
+          const description = document.createElement('span');
+          description.textContent = item.description;
+          text.append(description);
+        }
+
+        const edit = document.createElement('button');
+        edit.type = 'button';
+        edit.textContent = 'Edit';
+        edit.onclick = () => {
+          editingId = item.id;
+          nameInput.value = item.name;
+          descriptionInput.value = item.description;
+          submitButton.textContent = 'Save changes';
+          cancelButton.hidden = false;
+          nameInput.focus();
+        };
+
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'danger';
+        remove.textContent = 'Delete';
+        remove.onclick = async () => {
+          if (!confirm(`Delete "${item.name}"?`)) return;
+          try {
+            await api('/api/items/' + item.id, { method: 'DELETE' });
+            if (editingId === item.id) resetForm();
+            showMessage('');
+            await load();
+          } catch (error) {
+            showMessage(error.message);
+          }
+        };
+
+        li.append(text, edit, remove);
+        list.append(li);
+      }
+      if (items.length === 0) {
+        const empty = document.createElement('li');
+        empty.textContent = 'No items yet. Add one above.';
+        list.append(empty);
+      }
+    }
+
+    async function load() {
+      try {
+        render(await api('/api/items'));
+      } catch (error) {
+        showMessage(error.message);
+      }
+    }
+
+    form.onsubmit = async (event) => {
+      event.preventDefault();
+      const payload = {
+        name: nameInput.value.trim(),
+        description: descriptionInput.value.trim()
+      };
+      if (!payload.name) {
+        showMessage('Name is required');
+        return;
+      }
+      try {
+        await api(editingId ? '/api/items/' + editingId : '/api/items', {
+          method: editingId ? 'PUT' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        resetForm();
+        showMessage('');
+        await load();
+      } catch (error) {
+        showMessage(error.message);
+      }
+    };
+
+    cancelButton.onclick = () => {
+      resetForm();
+      showMessage('');
+    };
+
+    load();
+  </script>
+</body>
+</html>
